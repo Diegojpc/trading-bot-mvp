@@ -196,6 +196,7 @@ def _run_analysis_sync(ticker: str, force_refresh: bool, production_mode: bool):
                 regime_labels=np.array([]),
                 valid_dates=pd.DatetimeIndex([]),
                 transition_matrix=is_hmm_result.transition_matrix,
+                state_means=is_hmm_result.state_means,
                 regime_distribution={},
                 bic_scores={},
                 state_volatilities=is_hmm_result.state_volatilities,
