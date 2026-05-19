@@ -67,3 +67,20 @@ export async function getEquityResults(): Promise<EquityResults> {
 export async function getHeatmapResults(): Promise<HeatmapResults> {
   return fetchJSON(`${API_BASE}/results/heatmap`);
 }
+
+// ── Execution Endpoints ───────────────────────────────────────────────
+
+export async function getLiveBalance(marketType = 'spot'): Promise<{ status: string; balance: number; market_type: string }> {
+  return fetchJSON(`${API_BASE}/execution/balance?market_type=${marketType}`);
+}
+
+export async function runDailyTick(
+  ticker: string,
+  marketType = 'spot',
+  testnet = false
+): Promise<any> {
+  return fetchJSON(
+    `${API_BASE}/execution/tick?ticker=${encodeURIComponent(ticker)}&market_type=${marketType}&testnet=${testnet}`,
+    { method: 'POST' }
+  );
+}

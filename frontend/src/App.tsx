@@ -11,6 +11,8 @@ import {
   getStatus,
   getSweepResults,
   startAnalysis,
+  getLiveBalance,
+  runDailyTick,
 } from './api/client';
 import LoadingSpinner from './components/LoadingSpinner';
 import Warning from './components/Warning';
@@ -45,6 +47,11 @@ export default function App() {
   const [equityData, setEquityData] = useState<EquityResults | null>(null);
   const [heatmapData, setHeatmapData] = useState<HeatmapResults | null>(null);
 
+  // Live Execution
+  const [liveBalance, setLiveBalance] = useState<number | null>(null);
+  const [tickStatus, setTickStatus] = useState<'idle' | 'running' | 'success' | 'error'>('idle');
+  const [tickResult, setTickResult] = useState<any>(null);
+
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ── Load assets on mount ─────────────────────────────────────────
@@ -74,6 +81,13 @@ export default function App() {
       .catch(() => {});
 
     return () => stopPolling();
+  }, []);
+
+  // ── Load balance on mount ────────────────────────────────────────
+  useEffect(() => {
+    getLiveBalance('spot')
+      .then((res) => setLiveBalance(res.balance))
+      .catch((err) => console.error('Failed to load balance:', err));
   }, []);
 
   // ── Polling ──────────────────────────────────────────────────────
@@ -148,6 +162,23 @@ export default function App() {
     }
   };
 
+  // ── Start Execution Tick ────────────────────────────────────────
+  const handleRunTick = useCallback(async () => {
+    setTickStatus('running');
+    setTickResult(null);
+    try {
+      const result = await runDailyTick(selectedTicker, 'spot', false);
+      setTickResult(result);
+      setTickStatus('success');
+      // Refresh balance
+      getLiveBalance('spot').then(res => setLiveBalance(res.balance)).catch(console.error);
+    } catch (err: any) {
+      console.error(err);
+      setTickResult({ error: err.message });
+      setTickStatus('error');
+    }
+  }, [selectedTicker]);
+
   // ── Render ──────────────────────────────────────────────────────
   return (
     <div className="app-container">
@@ -192,8 +223,28 @@ export default function App() {
           >
             {appState === 'running' ? '⏳ Running...' : '🚀 Run Analysis'}
           </button>
+          <button
+            className="btn"
+            style={{ backgroundColor: '#10b981', color: '#fff', borderColor: '#059669' }}
+            onClick={handleRunTick}
+            disabled={tickStatus === 'running' || !selectedTicker}
+          >
+            {tickStatus === 'running' ? '⏳ Executing...' : '⚡ Run Daily Tick'}
+          </button>
         </div>
       </header>
+      
+      {/* Live Balance Bar */}
+      <div style={{ padding: '0 2rem', marginBottom: '1rem', display: 'flex', gap: '1rem', alignItems: 'center' }}>
+        <div style={{ background: 'var(--surface-color)', padding: '0.75rem 1rem', borderRadius: '0.5rem', border: '1px solid rgba(255,255,255,0.05)', fontSize: '0.9rem' }}>
+          💰 Binance Spot USDT: <strong style={{ color: '#00d97e' }}>{liveBalance !== null ? `$${liveBalance.toFixed(2)}` : 'Loading...'}</strong>
+        </div>
+        {tickResult && (
+          <div style={{ background: tickStatus === 'error' ? 'rgba(239, 68, 68, 0.1)' : 'rgba(16, 185, 129, 0.1)', color: tickStatus === 'error' ? '#ef4444' : '#10b981', padding: '0.75rem 1rem', borderRadius: '0.5rem', fontSize: '0.9rem' }}>
+            Tick Result: {tickStatus === 'error' ? tickResult.error : `Status: ${tickResult.status} | Regime: ${tickResult.current_regime} | Target: $${tickResult.target_usd}`}
+          </div>
+        )}
+      </div>
 
       {/* Warning banner — always visible */}
       {regimeData?.production_mode ? (

@@ -424,3 +424,34 @@ async def get_heatmap_data():
         "state_names": is_hmm.state_names,
         "colors": REGIME_COLORS[:is_hmm.n_states],
     })
+
+
+# ── Execution Endpoints ──────────────────────────────────────────────────
+
+@router.get("/execution/balance")
+async def get_balance(market_type: str = Query("spot")):
+    """Fetch current USDT balance from Binance."""
+    try:
+        from backend.execution.exchange import BinanceExchange
+        exchange = BinanceExchange(market_type=market_type)
+        balance = exchange.get_usdt_balance()
+        return {"status": "success", "balance": balance, "market_type": market_type}
+    except Exception as e:
+        logger.error(f"Error fetching balance: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/execution/tick")
+async def run_tick(
+    ticker: str = Query(..., description="Asset ticker (e.g., BTC-USD)"),
+    market_type: str = Query("spot"),
+    testnet: bool = Query(False)
+):
+    """Run a single execution tick (Fetch data, calc regime, calc signal, execute order)."""
+    try:
+        from backend.execution.bot import run_daily_tick
+        result = run_daily_tick(ticker=ticker, market_type=market_type, testnet=testnet)
+        return result
+    except Exception as e:
+        logger.error(f"Error executing tick: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
