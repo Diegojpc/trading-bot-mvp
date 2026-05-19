@@ -4,7 +4,8 @@ from typing import Dict, Any
 
 from backend.execution.exchange import BinanceExchange
 from backend.data.downloader import download_ohlcv
-from backend.models.hmm import compute_hmm_features, train_hmm
+from backend.models.features import compute_hmm_features
+from backend.models.hmm import train_hmm
 from backend.config import ASSET_REGISTRY
 
 logger = logging.getLogger(__name__)
