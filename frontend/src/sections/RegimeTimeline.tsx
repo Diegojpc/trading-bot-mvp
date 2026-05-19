@@ -32,7 +32,25 @@ export default function RegimeTimeline({ data }: RegimeTimelineProps) {
         layer: 'below',
       });
       segStart = i;
-    }
+  }
+
+  // ── IS / OOS Split Line ─────────────────────────────────────────
+  if (data.split_date) {
+    shapes.push({
+      type: 'line',
+      xref: 'x',
+      yref: 'paper',
+      x0: data.split_date,
+      x1: data.split_date,
+      y0: 0,
+      y1: 1,
+      line: {
+        color: '#10b981',
+        width: 2,
+        dash: 'dash',
+      },
+      layer: 'above',
+    });
   }
 
   // ── Price trace ─────────────────────────────────────────────────

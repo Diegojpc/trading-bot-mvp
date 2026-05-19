@@ -37,27 +37,27 @@ export default function ParameterTable({ data }: ParameterTableProps) {
       {/* Global best metrics */}
       <div className="metric-grid" style={{ marginBottom: '1.5rem' }}>
         <MetricCard
-          label="Sharpe Ratio"
+          label="IS Sharpe Ratio"
           value={best_global.sharpe_ratio.toFixed(3)}
           numericValue={best_global.sharpe_ratio}
         />
         <MetricCard
-          label="Net Profit"
+          label="OOS Sharpe Ratio"
+          value={best_global.oos_sharpe_ratio !== null ? best_global.oos_sharpe_ratio.toFixed(3) : 'N/A'}
+          numericValue={best_global.oos_sharpe_ratio || 0}
+        />
+        <MetricCard
+          label="IS Net Profit"
           value={`$${best_global.net_profit.toLocaleString()}`}
           numericValue={best_global.net_profit}
         />
         <MetricCard
-          label="Max Drawdown"
-          value={`${best_global.max_drawdown.toFixed(1)}%`}
-          colorMode="negative"
+          label="OOS Net Profit"
+          value={best_global.oos_net_profit !== null ? `$${best_global.oos_net_profit.toLocaleString()}` : 'N/A'}
+          numericValue={best_global.oos_net_profit || 0}
         />
         <MetricCard
-          label="Profit Factor"
-          value={best_global.profit_factor === Infinity ? '∞' : best_global.profit_factor.toFixed(2)}
-          numericValue={best_global.profit_factor - 1}
-        />
-        <MetricCard
-          label="Win Rate"
+          label="IS Win Rate"
           value={`${best_global.win_rate.toFixed(1)}%`}
           numericValue={best_global.win_rate - 50}
         />
@@ -77,10 +77,10 @@ export default function ParameterTable({ data }: ParameterTableProps) {
               <th>Fast SMA</th>
               <th>Slow SMA</th>
               <th>ATR Mult</th>
-              <th>Sharpe</th>
-              <th>Net Profit</th>
-              <th>Max DD</th>
-              <th>Profit Factor</th>
+              <th>IS Sharpe</th>
+              <th>OOS Sharpe</th>
+              <th>IS Net Profit</th>
+              <th>OOS Profit</th>
               <th>Win Rate</th>
               <th>Trades</th>
             </tr>
@@ -115,12 +115,14 @@ export default function ParameterTable({ data }: ParameterTableProps) {
                 <td style={{ color: row.sharpe_ratio > 0 ? '#00d97e' : '#ef4444' }}>
                   {row.sharpe_ratio.toFixed(3)}
                 </td>
+                <td style={{ color: row.oos_sharpe_ratio && row.oos_sharpe_ratio > 0 ? '#00d97e' : '#ef4444', fontWeight: 600 }}>
+                  {row.oos_sharpe_ratio !== null ? row.oos_sharpe_ratio.toFixed(3) : 'N/A'}
+                </td>
                 <td style={{ color: row.net_profit > 0 ? '#00d97e' : '#ef4444' }}>
                   ${row.net_profit.toLocaleString()}
                 </td>
-                <td style={{ color: '#ef4444' }}>{row.max_drawdown.toFixed(1)}%</td>
-                <td>
-                  {row.profit_factor === Infinity ? '∞' : row.profit_factor.toFixed(2)}
+                <td style={{ color: row.oos_net_profit && row.oos_net_profit > 0 ? '#00d97e' : '#ef4444', fontWeight: 600 }}>
+                  {row.oos_net_profit !== null ? `$${row.oos_net_profit.toLocaleString()}` : 'N/A'}
                 </td>
                 <td>{row.win_rate.toFixed(1)}%</td>
                 <td>{row.n_trades}</td>

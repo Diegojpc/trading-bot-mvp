@@ -14,11 +14,11 @@ import pandas as pd
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
 
-from backend.analysis.sweep import SweepResult, run_parameter_sweep
+from backend.analysis.sweep import SweepResult, run_parameter_sweep, OOSResult, run_oos_validation
 from backend.config import ASSET_REGISTRY, REGIME_COLORS, AssetConfig
 from backend.data.downloader import download_ohlcv
 from backend.models.features import compute_hmm_features
-from backend.models.hmm import HMMResult, train_hmm
+from backend.models.hmm import HMMResult, train_hmm, predict_oos
 
 logger = logging.getLogger("trading_bot")
 router = APIRouter(prefix="/api")
@@ -165,27 +165,51 @@ def _run_analysis_sync(ticker: str, force_refresh: bool):
         )
         _update_progress(25, f"Features computed: {features.shape[0]} valid rows")
 
-        # ── Step 3: HMM training ────────────────────────────────────
-        _update_progress(30, "Training HMM models (2-5 states)...")
-        hmm_result = train_hmm(features, valid_dates)
-        _update_progress(40, f"HMM trained: {hmm_result.n_states} states selected")
+        # ── Step 3: Train/Test Split (70% IS, 30% OOS) ───────────────
+        split_idx = int(len(features) * 0.7)
+        is_features = features[:split_idx]
+        is_dates = valid_dates[:split_idx]
+        oos_features = features[split_idx:]
+        oos_dates = valid_dates[split_idx:]
+        
+        # Also split the OHLCV dataframe (based on the dates that survived feature engineering)
+        is_ohlcv = ohlcv.loc[is_dates]
+        oos_ohlcv = ohlcv.loc[oos_dates]
 
-        # ── Step 4: Parameter sweep ──────────────────────────────────
-        _update_progress(45, "Running parameter sweep...")
+        # ── Step 4: HMM training (In-Sample ONLY) ───────────────────
+        _update_progress(30, "Training HMM models on IS data (2-5 states)...")
+        is_hmm_result = train_hmm(is_features, is_dates)
+        _update_progress(40, f"HMM trained: {is_hmm_result.n_states} states selected")
+        
+        # Project HMM to OOS
+        _update_progress(42, "Projecting regimes to OOS data...")
+        oos_hmm_result = predict_oos(is_hmm_result, oos_features, oos_dates)
+
+        # ── Step 5: Parameter sweep (In-Sample ONLY) ────────────────
+        _update_progress(45, "Running parameter sweep on IS data...")
 
         def sweep_progress(current: int, total: int):
-            pct = 45 + int(50 * current / total)
-            _update_progress(pct, f"Backtesting {current}/{total} combinations...")
+            pct = 45 + int(40 * current / total) # goes up to 85%
+            _update_progress(pct, f"IS Backtesting {current}/{total} combinations...")
 
-        sweep_result = run_parameter_sweep(
-            ohlcv, asset_config, hmm_result,
+        is_sweep_result = run_parameter_sweep(
+            is_ohlcv, asset_config, is_hmm_result,
             progress_callback=sweep_progress,
+        )
+        
+        # ── Step 6: OOS Validation ──────────────────────────────────
+        _update_progress(85, "Running OOS Validation blindly...")
+        oos_val_result = run_oos_validation(
+            oos_ohlcv, asset_config, oos_hmm_result,
+            is_sweep_result.best_global, is_sweep_result.best_per_regime
         )
 
         # ── Store results ────────────────────────────────────────────
         _analysis_state["ohlcv"] = ohlcv
-        _analysis_state["hmm_result"] = hmm_result
-        _analysis_state["sweep_result"] = sweep_result
+        _analysis_state["is_hmm_result"] = is_hmm_result
+        _analysis_state["oos_hmm_result"] = oos_hmm_result
+        _analysis_state["is_sweep_result"] = is_sweep_result
+        _analysis_state["oos_val_result"] = oos_val_result
         _analysis_state["asset_config"] = asset_config
         _analysis_state["status"] = "complete"
         _update_progress(100, "Analysis complete!")
@@ -224,34 +248,45 @@ async def get_regime_results():
 
     Returns regime timeline, distribution, transition matrix, and BIC scores.
     """
-    hmm: HMMResult | None = _analysis_state.get("hmm_result")
+    is_hmm: HMMResult | None = _analysis_state.get("is_hmm_result")
+    oos_hmm: HMMResult | None = _analysis_state.get("oos_hmm_result")
     ohlcv: pd.DataFrame | None = _analysis_state.get("ohlcv")
 
-    if hmm is None or ohlcv is None:
+    if is_hmm is None or oos_hmm is None or ohlcv is None:
         raise HTTPException(status_code=404, detail="No analysis results. Run /api/analyze first.")
 
-    # Build regime timeline (aligned with full OHLCV data)
-    regime_series = pd.Series(hmm.regime_labels, index=hmm.valid_dates)
+    # Build combined regime timeline
+    combined_dates = is_hmm.valid_dates.append(oos_hmm.valid_dates)
+    combined_labels = np.concatenate([is_hmm.regime_labels, oos_hmm.regime_labels])
+    
+    # Calculate combined distribution for display
+    unique, counts = np.unique(combined_labels, return_counts=True)
+    total = counts.sum()
+    combined_dist = {
+        is_hmm.state_names[int(s)]: float(counts[i] / total)
+        for i, s in enumerate(unique)
+    }
 
     # Price data for overlay
     price_data = _serialize_series(ohlcv["Close"])
 
     # Regime timeline
     regime_timeline = {
-        "dates": [d.strftime("%Y-%m-%d") for d in hmm.valid_dates],
-        "labels": hmm.regime_labels.tolist(),
+        "dates": [d.strftime("%Y-%m-%d") for d in combined_dates],
+        "labels": combined_labels.tolist(),
     }
 
     return {
-        "n_states": hmm.n_states,
-        "state_names": hmm.state_names,
-        "colors": REGIME_COLORS[:hmm.n_states],
+        "n_states": is_hmm.n_states,
+        "state_names": is_hmm.state_names,
+        "colors": REGIME_COLORS[:is_hmm.n_states],
         "timeline": regime_timeline,
-        "distribution": hmm.regime_distribution,
-        "transition_matrix": hmm.transition_matrix.round(4).tolist(),
-        "bic_scores": {str(k): round(v, 2) for k, v in hmm.bic_scores.items()},
-        "state_volatilities": hmm.state_volatilities.round(4).tolist(),
+        "distribution": combined_dist,
+        "transition_matrix": is_hmm.transition_matrix.round(4).tolist(),
+        "bic_scores": {str(k): round(v, 2) for k, v in is_hmm.bic_scores.items()},
+        "state_volatilities": is_hmm.state_volatilities.round(4).tolist(),
         "price_data": price_data,
+        "split_date": oos_hmm.valid_dates[0].strftime("%Y-%m-%d"),
     }
 
 
@@ -262,19 +297,35 @@ async def get_sweep_results():
 
     Returns best params per regime, all combo results, and global best.
     """
-    sweep: SweepResult | None = _analysis_state.get("sweep_result")
-    hmm: HMMResult | None = _analysis_state.get("hmm_result")
+    sweep: SweepResult | None = _analysis_state.get("is_sweep_result")
+    oos_val: OOSResult | None = _analysis_state.get("oos_val_result")
+    is_hmm: HMMResult | None = _analysis_state.get("is_hmm_result")
 
-    if sweep is None or hmm is None:
+    if sweep is None or is_hmm is None or oos_val is None:
         raise HTTPException(status_code=404, detail="No analysis results. Run /api/analyze first.")
 
+    # Combine IS and OOS metrics into a single response payload
+    best_global = sweep.best_global.copy()
+    best_global["oos_sharpe_ratio"] = oos_val.global_metrics["sharpe_ratio"]
+    best_global["oos_net_profit"] = oos_val.global_metrics["net_profit"]
+    best_global["oos_max_drawdown"] = oos_val.global_metrics["max_drawdown"]
+    
+    best_per_regime = {}
+    for state_id, is_regime_data in sweep.best_per_regime.items():
+        regime_data = is_regime_data.copy()
+        if state_id in oos_val.regime_metrics:
+            regime_data["oos_sharpe_ratio"] = oos_val.regime_metrics[state_id]["sharpe_ratio"]
+            regime_data["oos_net_profit"] = oos_val.regime_metrics[state_id]["net_profit"]
+        else:
+            regime_data["oos_sharpe_ratio"] = None
+            regime_data["oos_net_profit"] = None
+        best_per_regime[str(state_id)] = regime_data
+
     return _sanitize_for_json({
-        "best_global": sweep.best_global,
-        "best_per_regime": {
-            str(k): v for k, v in sweep.best_per_regime.items()
-        },
-        "state_names": hmm.state_names,
-        "colors": REGIME_COLORS[:hmm.n_states],
+        "best_global": best_global,
+        "best_per_regime": best_per_regime,
+        "state_names": is_hmm.state_names,
+        "colors": REGIME_COLORS[:is_hmm.n_states],
         "total_combinations": len(sweep.all_results),
     })
 
@@ -286,30 +337,39 @@ async def get_equity_curves():
 
     Returns global, per-regime, and combined equity curves, plus price overlay.
     """
-    sweep: SweepResult | None = _analysis_state.get("sweep_result")
-    hmm: HMMResult | None = _analysis_state.get("hmm_result")
+    sweep: SweepResult | None = _analysis_state.get("is_sweep_result")
+    oos_val: OOSResult | None = _analysis_state.get("oos_val_result")
+    is_hmm: HMMResult | None = _analysis_state.get("is_hmm_result")
+    oos_hmm: HMMResult | None = _analysis_state.get("oos_hmm_result")
     ohlcv: pd.DataFrame | None = _analysis_state.get("ohlcv")
 
-    if sweep is None or hmm is None or ohlcv is None:
+    if sweep is None or is_hmm is None or ohlcv is None or oos_val is None or oos_hmm is None:
         raise HTTPException(status_code=404, detail="No analysis results.")
 
     curves: dict[str, dict] = {}
 
     for key, curve in sweep.equity_curves.items():
-        curves[key] = _serialize_series(curve)
+        curves[f"is_{key}"] = _serialize_series(curve)
+        
+    for key, curve in oos_val.equity_curves.items():
+        curves[f"oos_{key}"] = _serialize_series(curve)
 
-    # Regime bar data
+    # Combined Regime bar data
+    combined_dates = is_hmm.valid_dates.append(oos_hmm.valid_dates)
+    combined_labels = np.concatenate([is_hmm.regime_labels, oos_hmm.regime_labels])
+    
     regime_bar = {
-        "dates": [d.strftime("%Y-%m-%d") for d in hmm.valid_dates],
-        "labels": hmm.regime_labels.tolist(),
+        "dates": [d.strftime("%Y-%m-%d") for d in combined_dates],
+        "labels": combined_labels.tolist(),
     }
 
     return {
         "equity_curves": curves,
         "price_data": _serialize_series(ohlcv["Close"]),
         "regime_bar": regime_bar,
-        "state_names": hmm.state_names,
-        "colors": REGIME_COLORS[:hmm.n_states],
+        "state_names": is_hmm.state_names,
+        "colors": REGIME_COLORS[:is_hmm.n_states],
+        "split_date": oos_hmm.valid_dates[0].strftime("%Y-%m-%d"),
     }
 
 
@@ -320,14 +380,14 @@ async def get_heatmap_data():
 
     Returns heatmap matrices for fast_sma × slow_sma, global and per-regime.
     """
-    sweep: SweepResult | None = _analysis_state.get("sweep_result")
-    hmm: HMMResult | None = _analysis_state.get("hmm_result")
+    sweep: SweepResult | None = _analysis_state.get("is_sweep_result")
+    is_hmm: HMMResult | None = _analysis_state.get("is_hmm_result")
 
-    if sweep is None or hmm is None:
+    if sweep is None or is_hmm is None:
         raise HTTPException(status_code=404, detail="No analysis results.")
 
     return _sanitize_for_json({
         "heatmap": sweep.heatmap_data,
-        "state_names": hmm.state_names,
-        "colors": REGIME_COLORS[:hmm.n_states],
+        "state_names": is_hmm.state_names,
+        "colors": REGIME_COLORS[:is_hmm.n_states],
     })

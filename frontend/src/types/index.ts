@@ -44,6 +44,7 @@ export interface RegimeResults {
   bic_scores: Record<string, number>;
   state_volatilities: number[];
   price_data: TimeSeriesData;
+  split_date: string;
 }
 
 // ── Sweep Results ─────────────────────────────────────────────────────
@@ -60,6 +61,9 @@ export interface BestCombo {
   n_trades: number;
   regime_id?: number;
   regime_name?: string;
+  oos_sharpe_ratio: number | null;
+  oos_net_profit: number | null;
+  oos_max_drawdown?: number | null;
 }
 
 export interface SweepResults {
@@ -77,6 +81,7 @@ export interface EquityResults {
   regime_bar: RegimeTimeline;
   state_names: string[];
   colors: string[];
+  split_date: string;
 }
 
 // ── Heatmap ───────────────────────────────────────────────────────────

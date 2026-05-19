@@ -36,6 +36,13 @@ class SweepResult:
     heatmap_data: dict                   # for Sharpe heatmap
     trades_by_combo: dict[str, pd.DataFrame]  # trades for each key combo
 
+@dataclass
+class OOSResult:
+    """Out-of-sample validation results."""
+    global_metrics: dict                 # OOS metrics for the IS best global params
+    regime_metrics: dict[int, dict]      # OOS metrics for the IS best regime params
+    equity_curves: dict[str, pd.Series]  # OOS equity curves
+
 
 def _run_single_backtest(
     df: pd.DataFrame,
@@ -396,3 +403,69 @@ def _build_sharpe_heatmap(
         }
 
     return heatmap
+
+def run_oos_validation(
+    oos_df: pd.DataFrame,
+    asset_config: AssetConfig,
+    oos_hmm_result: HMMResult,
+    is_best_global: dict,
+    is_best_per_regime: dict[int, dict],
+) -> OOSResult:
+    """
+    Run OOS validation backtests using the parameters locked in during IS training.
+    """
+    logger.info("Running Out-Of-Sample validation on %d bars", len(oos_df))
+    
+    # 1. Global OOS backtest
+    global_res = _run_single_backtest(
+        oos_df, 
+        is_best_global["fast_sma"], 
+        is_best_global["slow_sma"], 
+        is_best_global["atr_mult"],
+        asset_config.allow_short,
+        asset_config.slippage_pct,
+        asset_config.commission_per_trade,
+    )
+    
+    if global_res is None:
+        raise RuntimeError("OOS Global backtest failed.")
+        
+    global_metrics = compute_all_metrics(global_res["trades"], global_res["equity_curve"])
+    
+    # 2. Per-Regime OOS backtests
+    regime_metrics = {}
+    equity_curves = {"global": global_res["equity_curve"]}
+    
+    for state_id, regime_params in is_best_per_regime.items():
+        res = _run_single_backtest(
+            oos_df,
+            regime_params["fast_sma"],
+            regime_params["slow_sma"],
+            regime_params["atr_mult"],
+            asset_config.allow_short,
+            asset_config.slippage_pct,
+            asset_config.commission_per_trade,
+        )
+        if res is not None:
+            # We specifically want the metrics for this regime DURING this regime in OOS
+            rm = compute_metrics_by_regime(
+                res["trades"], res["equity_curve"],
+                oos_hmm_result.regime_labels, oos_hmm_result.valid_dates,
+                oos_hmm_result.n_states,
+            )
+            if state_id in rm:
+                regime_metrics[state_id] = rm[state_id]
+            equity_curves[f"regime_{state_id}"] = res["equity_curve"]
+
+    # 3. Combined OOS equity
+    combined_equity = _build_combined_equity(
+        oos_df, asset_config, oos_hmm_result, is_best_per_regime,
+    )
+    equity_curves["combined"] = combined_equity
+    
+    return OOSResult(
+        global_metrics=global_metrics,
+        regime_metrics=regime_metrics,
+        equity_curves=equity_curves,
+    )
+

@@ -39,6 +39,8 @@ class HMMResult:
     state_names: list[str]             # human-readable state names
     bic_scores: dict[int, float]       # {n_states: bic_score}
     regime_distribution: dict[str, float]  # {state_name: fraction}
+    model: GaussianHMM | None = None   # the trained model
+    state_remap: np.ndarray | None = None # array to remap raw model states to sorted states
 
 
 def _count_free_params(n_components: int, n_features: int, cov_type: str) -> int:
@@ -233,4 +235,40 @@ def train_hmm(
         state_names=state_names,
         bic_scores=bic_scores,
         regime_distribution=regime_dist,
+        model=best_model,
+        state_remap=remap,
+    )
+
+def predict_oos(
+    hmm_result: HMMResult, 
+    oos_features: np.ndarray, 
+    oos_dates: pd.DatetimeIndex
+) -> HMMResult:
+    """Project trained HMM onto Out-Of-Sample data."""
+    if hmm_result.model is None or hmm_result.state_remap is None:
+        raise ValueError("HMMResult is missing model or remap array.")
+        
+    raw_labels = hmm_result.model.predict(oos_features)
+    sorted_labels = hmm_result.state_remap[raw_labels]
+    
+    # Calculate OOS distribution
+    unique, counts = np.unique(sorted_labels, return_counts=True)
+    total = counts.sum()
+    regime_dist = {
+        hmm_result.state_names[int(s)]: float(counts[i] / total)
+        for i, s in enumerate(unique)
+    }
+    
+    return HMMResult(
+        n_states=hmm_result.n_states,
+        regime_labels=sorted_labels,
+        valid_dates=oos_dates,
+        transition_matrix=hmm_result.transition_matrix,
+        state_means=hmm_result.state_means,
+        state_volatilities=hmm_result.state_volatilities,
+        state_names=hmm_result.state_names,
+        bic_scores=hmm_result.bic_scores,
+        regime_distribution=regime_dist,
+        model=hmm_result.model,
+        state_remap=hmm_result.state_remap,
     )

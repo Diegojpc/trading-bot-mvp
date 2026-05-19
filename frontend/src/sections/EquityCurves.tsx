@@ -15,50 +15,93 @@ export default function EquityCurves({ data }: EquityCurvesProps) {
   const traces: Plotly.Data[] = [];
 
   // ── Equity curve traces ─────────────────────────────────────────
-  // Global
-  if (equity_curves.global?.dates?.length) {
+  // Global IS
+  if (equity_curves.is_global?.dates?.length) {
     traces.push({
-      x: equity_curves.global.dates,
-      y: equity_curves.global.values,
+      x: equity_curves.is_global.dates,
+      y: equity_curves.is_global.values,
       type: 'scatter',
       mode: 'lines',
-      name: 'Global Best',
+      name: 'IS Global Best',
       line: { color: '#e8ecf4', width: 2 },
       yaxis: 'y1',
-      hovertemplate: '%{x}<br>Equity: $%{y:,.0f}<extra>Global Best</extra>',
+      hovertemplate: '%{x}<br>IS Equity: $%{y:,.0f}<extra>IS Global</extra>',
+    });
+  }
+
+  // Global OOS
+  if (equity_curves.oos_global?.dates?.length) {
+    traces.push({
+      x: equity_curves.oos_global.dates,
+      y: equity_curves.oos_global.values,
+      type: 'scatter',
+      mode: 'lines',
+      name: 'OOS Global Best',
+      line: { color: '#00d97e', width: 2.5 },
+      yaxis: 'y1',
+      hovertemplate: '%{x}<br>OOS Equity: $%{y:,.0f}<extra>OOS Global</extra>',
     });
   }
 
   // Per-regime
   state_names.forEach((name, i) => {
-    const key = `regime_${i}`;
-    const curve = equity_curves[key];
-    if (curve?.dates?.length) {
+    // IS
+    const is_curve = equity_curves[`is_regime_${i}`];
+    if (is_curve?.dates?.length) {
       traces.push({
-        x: curve.dates,
-        y: curve.values,
+        x: is_curve.dates,
+        y: is_curve.values,
         type: 'scatter',
         mode: 'lines',
-        name: `${name} Best`,
+        name: `IS ${name}`,
         line: { color: colors[i], width: 1.5, dash: 'dot' },
         yaxis: 'y1',
-        opacity: 0.8,
-        hovertemplate: `%{x}<br>Equity: $%{y:,.0f}<extra>${name} Best</extra>`,
+        opacity: 0.6,
+        hovertemplate: `%{x}<br>IS Equity: $%{y:,.0f}<extra>IS ${name}</extra>`,
+      });
+    }
+    // OOS
+    const oos_curve = equity_curves[`oos_regime_${i}`];
+    if (oos_curve?.dates?.length) {
+      traces.push({
+        x: oos_curve.dates,
+        y: oos_curve.values,
+        type: 'scatter',
+        mode: 'lines',
+        name: `OOS ${name}`,
+        line: { color: colors[i], width: 2, dash: 'solid' },
+        yaxis: 'y1',
+        opacity: 0.9,
+        hovertemplate: `%{x}<br>OOS Equity: $%{y:,.0f}<extra>OOS ${name}</extra>`,
       });
     }
   });
 
-  // Combined (if available)
-  if (equity_curves.combined?.dates?.length) {
+  // Combined IS (if available)
+  if (equity_curves.is_combined?.dates?.length) {
     traces.push({
-      x: equity_curves.combined.dates,
-      y: equity_curves.combined.values,
+      x: equity_curves.is_combined.dates,
+      y: equity_curves.is_combined.values,
       type: 'scatter',
       mode: 'lines',
-      name: 'Combined',
-      line: { color: '#a855f7', width: 2, dash: 'dashdot' },
+      name: 'IS Combined',
+      line: { color: '#a855f7', width: 1.5, dash: 'dashdot' },
       yaxis: 'y1',
-      hovertemplate: '%{x}<br>Equity: $%{y:,.0f}<extra>Combined</extra>',
+      hovertemplate: '%{x}<br>IS Equity: $%{y:,.0f}<extra>IS Combined</extra>',
+    });
+  }
+  
+  // Combined OOS (if available)
+  if (equity_curves.oos_combined?.dates?.length) {
+    traces.push({
+      x: equity_curves.oos_combined.dates,
+      y: equity_curves.oos_combined.values,
+      type: 'scatter',
+      mode: 'lines',
+      name: 'OOS Combined',
+      line: { color: '#d946ef', width: 2, dash: 'dashdot' },
+      yaxis: 'y1',
+      hovertemplate: '%{x}<br>OOS Equity: $%{y:,.0f}<extra>OOS Combined</extra>',
     });
   }
 
@@ -97,6 +140,24 @@ export default function EquityCurves({ data }: EquityCurvesProps) {
         segStart = i;
       }
     }
+  }
+
+  // ── IS / OOS Split Line ─────────────────────────────────────────
+  if (data.split_date) {
+    shapes.push({
+      type: 'line',
+      xref: 'x',
+      yref: 'paper',
+      x0: data.split_date,
+      x1: data.split_date,
+      y0: 0,
+      y1: 1,
+      line: {
+        color: '#10b981',
+        width: 2,
+        dash: 'dash',
+      },
+    });
   }
 
   return (
