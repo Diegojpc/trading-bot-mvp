@@ -3,7 +3,7 @@
    ═══════════════════════════════════════════════════════════════════════ */
 
 import { useState } from 'react';
-import Plot from 'react-plotly.js';
+import Plot from '../components/Plot';
 import type { HeatmapResults } from '../types';
 
 interface SharpeHeatmapProps {

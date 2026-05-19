@@ -54,22 +54,27 @@ def download_ohlcv(
     if not force_refresh:
         try:
             df = pd.read_parquet(cache_file)
-            # Check if cache is reasonably fresh (< 1 day old)
             if len(df) > 100:
-                logger.info(
-                    "Cache hit for %s — %d rows, %s to %s",
-                    ticker, len(df),
-                    df.index.min().strftime("%Y-%m-%d"),
-                    df.index.max().strftime("%Y-%m-%d"),
-                )
-                return df
+                last_date = df.index.max()
+                # Check if cache is reasonably fresh (last date is within 2 days)
+                if (datetime.now() - last_date).days <= 2:
+                    logger.info(
+                        "Cache hit for %s — %d rows, %s to %s",
+                        ticker, len(df),
+                        df.index.min().strftime("%Y-%m-%d"),
+                        df.index.max().strftime("%Y-%m-%d"),
+                    )
+                    return df
+                else:
+                    logger.info("Cache for %s is stale (last date: %s). Re-downloading.", ticker, last_date.strftime("%Y-%m-%d"))
         except FileNotFoundError:
             logger.debug("No cache found for %s, will download.", ticker)
         except Exception as exc:
             logger.warning("Cache read failed for %s: %s — re-downloading.", ticker, exc)
 
     # ── Download from yfinance ───────────────────────────────────────────
-    end_date = datetime.now()
+    # yfinance end date is exclusive, so add 1 day to capture today's data
+    end_date = datetime.now() + timedelta(days=1)
     start_date = end_date - timedelta(days=asset_config.years_of_data * 365)
 
     logger.info(

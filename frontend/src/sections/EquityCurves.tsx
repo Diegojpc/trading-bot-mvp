@@ -2,7 +2,7 @@
    EquityCurves — Multi-trace equity chart with regime ribbon.
    ═══════════════════════════════════════════════════════════════════════ */
 
-import Plot from 'react-plotly.js';
+import Plot from '../components/Plot';
 import type { EquityResults } from '../types';
 
 interface EquityCurvesProps {

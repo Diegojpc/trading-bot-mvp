@@ -2,7 +2,7 @@
    RegimeTimeline — Price chart with regime background + pie chart.
    ═══════════════════════════════════════════════════════════════════════ */
 
-import Plot from 'react-plotly.js';
+import Plot from '../components/Plot';
 import type { RegimeResults } from '../types';
 
 interface RegimeTimelineProps {

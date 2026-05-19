@@ -2,7 +2,7 @@
    TransitionMatrix — HMM state transition probability heatmap.
    ═══════════════════════════════════════════════════════════════════════ */
 
-import Plot from 'react-plotly.js';
+import Plot from '../components/Plot';
 import type { RegimeResults } from '../types';
 
 interface TransitionMatrixProps {
