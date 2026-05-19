@@ -240,8 +240,15 @@ export default function App() {
           💰 Binance Spot USDT: <strong style={{ color: '#00d97e' }}>{liveBalance !== null ? `$${liveBalance.toFixed(2)}` : 'Loading...'}</strong>
         </div>
         {tickResult && (
-          <div style={{ background: tickStatus === 'error' ? 'rgba(239, 68, 68, 0.1)' : 'rgba(16, 185, 129, 0.1)', color: tickStatus === 'error' ? '#ef4444' : '#10b981', padding: '0.75rem 1rem', borderRadius: '0.5rem', fontSize: '0.9rem' }}>
-            Tick Result: {tickStatus === 'error' ? tickResult.error : `Status: ${tickResult.status} | Regime: ${tickResult.current_regime} | Target: $${tickResult.target_usd}`}
+          <div style={{ 
+            background: tickResult.status === 'error' ? 'rgba(239, 68, 68, 0.1)' : tickResult.status === 'executed' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(59, 130, 246, 0.1)', 
+            color: tickResult.status === 'error' ? '#ef4444' : tickResult.status === 'executed' ? '#10b981' : '#3b82f6', 
+            padding: '0.75rem 1rem', borderRadius: '0.5rem', fontSize: '0.9rem', flex: 1 
+          }}>
+            {tickResult.error 
+              ? `❌ ${tickResult.error}` 
+              : `${tickResult.status === 'executed' ? '✅' : tickResult.status === 'error' ? '❌' : 'ℹ️'} ${tickResult.status.toUpperCase()} | Regime: ${tickResult.current_regime ?? 'N/A'} | Signal: ${tickResult.signal === 1 ? 'BULLISH' : 'BEARISH'} | Target: $${tickResult.target_usd?.toFixed(2) ?? 'N/A'}${tickResult.reason ? ` | ${tickResult.reason}` : ''}`
+            }
           </div>
         )}
       </div>

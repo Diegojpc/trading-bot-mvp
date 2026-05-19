@@ -115,10 +115,24 @@ def run_daily_tick(ticker: str, market_type: str = "spot", testnet: bool = False
     order_amount_base = abs(diff_usd) / current_price
     side = "buy" if diff_usd > 0 else "sell"
     
-    # Check if we have enough USDT to buy
+    # Check if we have enough USDT to buy — cap to available balance
     if side == "buy" and free_usdt < abs(diff_usd):
-        logger.error(f"Cannot buy ${abs(diff_usd):.2f} of {symbol}. Only ${free_usdt:.2f} USDT available.")
-        return {"status": "error", "reason": "Insufficient USDT"}
+        if free_usdt >= MIN_ORDER_USD:
+            logger.warning(f"Insufficient funds for full target (${abs(diff_usd):.2f}). Capping order to available ${free_usdt:.2f} USDT.")
+            diff_usd = free_usdt
+            order_amount_base = abs(diff_usd) / current_price
+        else:
+            logger.error(f"Cannot buy ${abs(diff_usd):.2f} of {symbol}. Only ${free_usdt:.2f} USDT available (below ${MIN_ORDER_USD} minimum).")
+            return {
+                "status": "error",
+                "reason": f"Insufficient USDT (${free_usdt:.2f} available, ${MIN_ORDER_USD} minimum)",
+                "current_regime": current_regime_name,
+                "signal": signal,
+                "signal_label": "BULLISH" if signal == 1 else "BEARISH",
+                "target_usd": target_exposure_usd,
+                "available_usd": free_usdt,
+                "current_price": current_price,
+            }
         
     # 6. Execute Order
     logger.info(f"Executing {side.upper()} order for {order_amount_base:.6f} {symbol}")
