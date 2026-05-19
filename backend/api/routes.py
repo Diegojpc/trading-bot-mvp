@@ -430,12 +430,18 @@ async def get_heatmap_data():
 
 @router.get("/execution/balance")
 async def get_balance(market_type: str = Query("spot")):
-    """Fetch current USDT balance from Binance."""
+    """Fetch current portfolio state from Binance (USDT + BTC)."""
     try:
         from backend.execution.exchange import BinanceExchange
         exchange = BinanceExchange(market_type=market_type)
-        balance = exchange.get_usdt_balance()
-        return {"status": "success", "balance": balance, "market_type": market_type}
+        free_usdt = exchange.get_usdt_balance()
+        btc_held = exchange.get_position("BTC/USDT")
+        return {
+            "status": "success",
+            "market_type": market_type,
+            "free_usdt": round(free_usdt, 2),
+            "btc_held": round(btc_held, 8),
+        }
     except Exception as e:
         logger.error(f"Error fetching balance: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

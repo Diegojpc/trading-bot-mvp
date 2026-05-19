@@ -65,7 +65,8 @@ def run_daily_tick(ticker: str, market_type: str = "spot", testnet: bool = False
     
     # 3. Check Signal (Global 10/30)
     signal = calculate_sma_signal(ohlcv, fast_period=10, slow_period=30)
-    logger.info(f"Current SMA Signal: {'BULLISH' if signal == 1 else 'BEARISH'}")
+    signal_label = "BULLISH" if signal == 1 else "BEARISH"
+    logger.info(f"Current SMA Signal: {signal_label}")
     
     # 4. Determine Target Allocation
     # Risk Engine Rules:
@@ -84,66 +85,90 @@ def run_daily_tick(ticker: str, market_type: str = "spot", testnet: bool = False
         logger.info("Bearish signal. Targeting $0 (Cash).")
         target_exposure_usd = 0.0
         
-    # Check current balance to ensure we have enough funds
+    # Get account state from Binance
     free_usdt = exchange.get_usdt_balance()
     current_price = ohlcv['Close'].iloc[-1]
     
-    # Get current position
+    # Get current position (BTC already held)
     symbol = "BTC/USDT" if ticker == "BTC-USD" else f"{ticker.split('-')[0]}/USDT"
     current_pos_base = exchange.get_position(symbol)
     current_pos_usd = current_pos_base * current_price
+    total_portfolio_usd = free_usdt + current_pos_usd
     
-    logger.info(f"Current Position: {current_pos_base:.6f} {symbol.split('/')[0]} (~${current_pos_usd:.2f})")
-    logger.info(f"Target Position: ~${target_exposure_usd:.2f}")
+    logger.info(f"=== PORTFOLIO STATE ===")
+    logger.info(f"  Free USDT: ${free_usdt:.2f}")
+    logger.info(f"  BTC held: {current_pos_base:.8f} (~${current_pos_usd:.2f})")
+    logger.info(f"  Total portfolio: ${total_portfolio_usd:.2f}")
+    logger.info(f"  Current BTC price: ${current_price:.2f}")
+    logger.info(f"  Target exposure: ${target_exposure_usd:.2f}")
+    
+    # Build base response (always included in every return)
+    base_response = {
+        "current_regime": current_regime_name,
+        "signal": signal,
+        "signal_label": signal_label,
+        "target_usd": target_exposure_usd,
+        "portfolio": {
+            "free_usdt": round(free_usdt, 2),
+            "btc_held": round(current_pos_base, 8),
+            "btc_value_usd": round(current_pos_usd, 2),
+            "total_usd": round(total_portfolio_usd, 2),
+            "btc_price": round(current_price, 2),
+        }
+    }
     
     # 5. Calculate Order Size
-    diff_usd = target_exposure_usd - current_pos_usd
+    # Cap target to MAX_CAPITAL_USD or total portfolio, whichever is smaller
+    effective_target = min(target_exposure_usd, total_portfolio_usd)
+    diff_usd = effective_target - current_pos_usd
     
     # Binance minimum order size is usually ~$5 for Spot, avoid dust trades
     MIN_ORDER_USD = 5.0
     
     if abs(diff_usd) < MIN_ORDER_USD:
-        logger.info(f"Difference (${diff_usd:.2f}) is below minimum order size. No action needed.")
+        reason = "Already at target" if current_pos_usd > 0 else "Difference too small"
+        logger.info(f"Difference (${diff_usd:.2f}) is below minimum order size (${MIN_ORDER_USD}). {reason}.")
         return {
-            "status": "skipped",
-            "reason": "Difference too small",
-            "current_regime": current_regime_name,
-            "signal": signal,
-            "target_usd": target_exposure_usd
+            **base_response,
+            "status": "holding" if current_pos_usd > 0 and signal == 1 else "skipped",
+            "reason": reason,
         }
         
     order_amount_base = abs(diff_usd) / current_price
     side = "buy" if diff_usd > 0 else "sell"
     
     # Check if we have enough USDT to buy — cap to available balance
-    if side == "buy" and free_usdt < abs(diff_usd):
-        if free_usdt >= MIN_ORDER_USD:
-            logger.warning(f"Insufficient funds for full target (${abs(diff_usd):.2f}). Capping order to available ${free_usdt:.2f} USDT.")
+    if side == "buy":
+        if free_usdt < MIN_ORDER_USD:
+            logger.info(f"Want to buy ${abs(diff_usd):.2f} but only ${free_usdt:.2f} USDT free (below ${MIN_ORDER_USD} min).")
+            if current_pos_usd > 0:
+                logger.info(f"Already holding ${current_pos_usd:.2f} worth of BTC. Holding position.")
+                return {
+                    **base_response,
+                    "status": "holding",
+                    "reason": f"Already holding ${current_pos_usd:.2f} BTC. No free USDT to add more.",
+                }
+            else:
+                return {
+                    **base_response,
+                    "status": "error",
+                    "reason": f"Insufficient USDT (${free_usdt:.2f} available, ${MIN_ORDER_USD} minimum)",
+                }
+        elif free_usdt < abs(diff_usd):
+            logger.warning(f"Capping buy order from ${abs(diff_usd):.2f} to available ${free_usdt:.2f} USDT.")
             diff_usd = free_usdt
             order_amount_base = abs(diff_usd) / current_price
-        else:
-            logger.error(f"Cannot buy ${abs(diff_usd):.2f} of {symbol}. Only ${free_usdt:.2f} USDT available (below ${MIN_ORDER_USD} minimum).")
-            return {
-                "status": "error",
-                "reason": f"Insufficient USDT (${free_usdt:.2f} available, ${MIN_ORDER_USD} minimum)",
-                "current_regime": current_regime_name,
-                "signal": signal,
-                "signal_label": "BULLISH" if signal == 1 else "BEARISH",
-                "target_usd": target_exposure_usd,
-                "available_usd": free_usdt,
-                "current_price": current_price,
-            }
         
     # 6. Execute Order
-    logger.info(f"Executing {side.upper()} order for {order_amount_base:.6f} {symbol}")
+    logger.info(f"Executing {side.upper()} order for {order_amount_base:.8f} {symbol} (~${abs(diff_usd):.2f})")
     result = exchange.execute_market_order(symbol, side, order_amount_base)
     
     logger.info("=== TICK COMPLETE ===")
     
     return {
+        **base_response,
         "status": "executed",
         "order": result,
-        "current_regime": current_regime_name,
-        "signal": signal,
-        "target_usd": target_exposure_usd
+        "side": side,
+        "amount_usd": round(abs(diff_usd), 2),
     }

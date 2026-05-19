@@ -70,7 +70,7 @@ export async function getHeatmapResults(): Promise<HeatmapResults> {
 
 // ── Execution Endpoints ───────────────────────────────────────────────
 
-export async function getLiveBalance(marketType = 'spot'): Promise<{ status: string; balance: number; market_type: string }> {
+export async function getLiveBalance(marketType = 'spot'): Promise<{ status: string; free_usdt: number; btc_held: number; market_type: string }> {
   return fetchJSON(`${API_BASE}/execution/balance?market_type=${marketType}`);
 }
 

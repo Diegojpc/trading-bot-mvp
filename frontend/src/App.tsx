@@ -48,7 +48,7 @@ export default function App() {
   const [heatmapData, setHeatmapData] = useState<HeatmapResults | null>(null);
 
   // Live Execution
-  const [liveBalance, setLiveBalance] = useState<number | null>(null);
+  const [portfolio, setPortfolio] = useState<{ free_usdt: number; btc_held: number } | null>(null);
   const [tickStatus, setTickStatus] = useState<'idle' | 'running' | 'success' | 'error'>('idle');
   const [tickResult, setTickResult] = useState<any>(null);
 
@@ -86,7 +86,7 @@ export default function App() {
   // ── Load balance on mount ────────────────────────────────────────
   useEffect(() => {
     getLiveBalance('spot')
-      .then((res) => setLiveBalance(res.balance))
+      .then((res) => setPortfolio({ free_usdt: res.free_usdt, btc_held: res.btc_held }))
       .catch((err) => console.error('Failed to load balance:', err));
   }, []);
 
@@ -169,9 +169,9 @@ export default function App() {
     try {
       const result = await runDailyTick(selectedTicker, 'spot', false);
       setTickResult(result);
-      setTickStatus('success');
+      setTickStatus(result.status === 'error' ? 'error' : 'success');
       // Refresh balance
-      getLiveBalance('spot').then(res => setLiveBalance(res.balance)).catch(console.error);
+      getLiveBalance('spot').then(res => setPortfolio({ free_usdt: res.free_usdt, btc_held: res.btc_held })).catch(console.error);
     } catch (err: any) {
       console.error(err);
       setTickResult({ error: err.message });
@@ -234,10 +234,11 @@ export default function App() {
         </div>
       </header>
       
-      {/* Live Balance Bar */}
-      <div style={{ padding: '0 2rem', marginBottom: '1rem', display: 'flex', gap: '1rem', alignItems: 'center' }}>
-        <div style={{ background: 'var(--surface-color)', padding: '0.75rem 1rem', borderRadius: '0.5rem', border: '1px solid rgba(255,255,255,0.05)', fontSize: '0.9rem' }}>
-          💰 Binance Spot USDT: <strong style={{ color: '#00d97e' }}>{liveBalance !== null ? `$${liveBalance.toFixed(2)}` : 'Loading...'}</strong>
+      {/* Live Portfolio Bar */}
+      <div style={{ padding: '0 2rem', marginBottom: '1rem', display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ background: 'var(--surface-color)', padding: '0.75rem 1rem', borderRadius: '0.5rem', border: '1px solid rgba(255,255,255,0.05)', fontSize: '0.9rem', display: 'flex', gap: '1.5rem' }}>
+          <span>💵 USDT: <strong style={{ color: '#00d97e' }}>{portfolio ? `$${portfolio.free_usdt.toFixed(2)}` : '...'}</strong></span>
+          <span>₿ BTC: <strong style={{ color: '#f7931a' }}>{portfolio ? portfolio.btc_held.toFixed(8) : '...'}</strong></span>
         </div>
         {tickResult && (
           <div style={{ 
@@ -247,7 +248,7 @@ export default function App() {
           }}>
             {tickResult.error 
               ? `❌ ${tickResult.error}` 
-              : `${tickResult.status === 'executed' ? '✅' : tickResult.status === 'error' ? '❌' : 'ℹ️'} ${tickResult.status.toUpperCase()} | Regime: ${tickResult.current_regime ?? 'N/A'} | Signal: ${tickResult.signal === 1 ? 'BULLISH' : 'BEARISH'} | Target: $${tickResult.target_usd?.toFixed(2) ?? 'N/A'}${tickResult.reason ? ` | ${tickResult.reason}` : ''}`
+              : `${tickResult.status === 'executed' ? '✅' : tickResult.status === 'error' ? '❌' : tickResult.status === 'holding' ? '📊' : 'ℹ️'} ${tickResult.status.toUpperCase()} | Regime: ${tickResult.current_regime ?? 'N/A'} | Signal: ${tickResult.signal_label ?? (tickResult.signal === 1 ? 'BULLISH' : 'BEARISH')}${tickResult.portfolio ? ` | Portfolio: $${tickResult.portfolio.total_usd}` : ''}${tickResult.reason ? ` | ${tickResult.reason}` : ''}`
             }
           </div>
         )}
