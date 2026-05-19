@@ -109,6 +109,7 @@ async def list_assets():
 async def start_analysis(
     ticker: str = Query(..., description="Asset ticker (e.g., QQQ, BTC-USD)"),
     force_refresh: bool = Query(False, description="Force re-download data"),
+    production_mode: bool = Query(False, description="Train on 100% data (no OOS split)"),
 ):
     """
     Trigger full analysis pipeline for a given asset.
@@ -138,13 +139,13 @@ async def start_analysis(
 
     # Run in background thread to not block the event loop
     asyncio.get_event_loop().run_in_executor(
-        None, _run_analysis_sync, ticker, force_refresh,
+        None, _run_analysis_sync, ticker, force_refresh, production_mode,
     )
 
     return {"status": "started", "ticker": ticker}
 
 
-def _run_analysis_sync(ticker: str, force_refresh: bool):
+def _run_analysis_sync(ticker: str, force_refresh: bool, production_mode: bool):
     """Synchronous analysis pipeline — runs in a thread pool."""
     global _analysis_state
 
@@ -165,8 +166,9 @@ def _run_analysis_sync(ticker: str, force_refresh: bool):
         )
         _update_progress(25, f"Features computed: {features.shape[0]} valid rows")
 
-        # ── Step 3: Train/Test Split (70% IS, 30% OOS) ───────────────
-        split_idx = int(len(features) * 0.7)
+        # ── Step 3: Train/Test Split (70% IS, 30% OOS or 100% IS) ────
+        split_pct = 1.0 if production_mode else 0.7
+        split_idx = int(len(features) * split_pct)
         is_features = features[:split_idx]
         is_dates = valid_dates[:split_idx]
         oos_features = features[split_idx:]
@@ -181,9 +183,25 @@ def _run_analysis_sync(ticker: str, force_refresh: bool):
         is_hmm_result = train_hmm(is_features, is_dates)
         _update_progress(40, f"HMM trained: {is_hmm_result.n_states} states selected")
         
-        # Project HMM to OOS
+        # Project HMM to OOS (if not in production mode)
         _update_progress(42, "Projecting regimes to OOS data...")
-        oos_hmm_result = predict_oos(is_hmm_result, oos_features, oos_dates)
+        if len(oos_features) > 0:
+            oos_hmm_result = predict_oos(is_hmm_result, oos_features, oos_dates)
+        else:
+            # Dummy OOS HMM result for production mode
+            from backend.models.hmm import HMMResult
+            oos_hmm_result = HMMResult(
+                n_states=is_hmm_result.n_states,
+                state_names=is_hmm_result.state_names,
+                regime_labels=np.array([]),
+                valid_dates=pd.DatetimeIndex([]),
+                transition_matrix=is_hmm_result.transition_matrix,
+                regime_distribution={},
+                bic_scores={},
+                state_volatilities=is_hmm_result.state_volatilities,
+                model=None,
+                state_remap=None
+            )
 
         # ── Step 5: Parameter sweep (In-Sample ONLY) ────────────────
         _update_progress(45, "Running parameter sweep on IS data...")
@@ -199,10 +217,21 @@ def _run_analysis_sync(ticker: str, force_refresh: bool):
         
         # ── Step 6: OOS Validation ──────────────────────────────────
         _update_progress(85, "Running OOS Validation blindly...")
-        oos_val_result = run_oos_validation(
-            oos_ohlcv, asset_config, oos_hmm_result,
-            is_sweep_result.best_global, is_sweep_result.best_per_regime
-        )
+        if len(oos_features) > 0:
+            oos_val_result = run_oos_validation(
+                oos_ohlcv, asset_config, oos_hmm_result,
+                is_sweep_result.best_global, is_sweep_result.best_per_regime
+            )
+        else:
+            # Dummy OOS Val result for production mode
+            from backend.analysis.sweep import OOSResult
+            oos_val_result = OOSResult(
+                global_metrics={"sharpe_ratio": None, "net_profit": None, "max_drawdown": None, "profit_factor": None, "win_rate": None, "n_trades": 0},
+                regime_metrics={},
+                equity_curves={"global": pd.Series()}
+            )
+            
+        _analysis_state["production_mode"] = production_mode
 
         # ── Store results ────────────────────────────────────────────
         _analysis_state["ohlcv"] = ohlcv
@@ -286,7 +315,8 @@ async def get_regime_results():
         "bic_scores": {str(k): round(v, 2) for k, v in is_hmm.bic_scores.items()},
         "state_volatilities": is_hmm.state_volatilities.round(4).tolist(),
         "price_data": price_data,
-        "split_date": oos_hmm.valid_dates[0].strftime("%Y-%m-%d"),
+        "split_date": oos_hmm.valid_dates[0].strftime("%Y-%m-%d") if len(oos_hmm.valid_dates) > 0 else None,
+        "production_mode": _analysis_state.get("production_mode", False),
     }
 
 
@@ -327,6 +357,7 @@ async def get_sweep_results():
         "state_names": is_hmm.state_names,
         "colors": REGIME_COLORS[:is_hmm.n_states],
         "total_combinations": len(sweep.all_results),
+        "production_mode": _analysis_state.get("production_mode", False),
     })
 
 
@@ -369,7 +400,8 @@ async def get_equity_curves():
         "regime_bar": regime_bar,
         "state_names": is_hmm.state_names,
         "colors": REGIME_COLORS[:is_hmm.n_states],
-        "split_date": oos_hmm.valid_dates[0].strftime("%Y-%m-%d"),
+        "split_date": oos_hmm.valid_dates[0].strftime("%Y-%m-%d") if len(oos_hmm.valid_dates) > 0 else None,
+        "production_mode": _analysis_state.get("production_mode", False),
     }
 
 

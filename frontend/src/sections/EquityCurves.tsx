@@ -22,10 +22,10 @@ export default function EquityCurves({ data }: EquityCurvesProps) {
       y: equity_curves.is_global.values,
       type: 'scatter',
       mode: 'lines',
-      name: 'IS Global Best',
+      name: data.production_mode ? 'Global Best (100% IS)' : 'IS Global Best',
       line: { color: '#e8ecf4', width: 2 },
       yaxis: 'y1',
-      hovertemplate: '%{x}<br>IS Equity: $%{y:,.0f}<extra>IS Global</extra>',
+      hovertemplate: data.production_mode ? '%{x}<br>Equity: $%{y:,.0f}<extra>Global</extra>' : '%{x}<br>IS Equity: $%{y:,.0f}<extra>IS Global</extra>',
     });
   }
 
@@ -53,11 +53,11 @@ export default function EquityCurves({ data }: EquityCurvesProps) {
         y: is_curve.values,
         type: 'scatter',
         mode: 'lines',
-        name: `IS ${name}`,
+        name: data.production_mode ? name : `IS ${name}`,
         line: { color: colors[i], width: 1.5, dash: 'dot' },
         yaxis: 'y1',
         opacity: 0.6,
-        hovertemplate: `%{x}<br>IS Equity: $%{y:,.0f}<extra>IS ${name}</extra>`,
+        hovertemplate: data.production_mode ? `%{x}<br>Equity: $%{y:,.0f}<extra>${name}</extra>` : `%{x}<br>IS Equity: $%{y:,.0f}<extra>IS ${name}</extra>`,
       });
     }
     // OOS
@@ -84,10 +84,10 @@ export default function EquityCurves({ data }: EquityCurvesProps) {
       y: equity_curves.is_combined.values,
       type: 'scatter',
       mode: 'lines',
-      name: 'IS Combined',
+      name: data.production_mode ? 'Combined' : 'IS Combined',
       line: { color: '#a855f7', width: 1.5, dash: 'dashdot' },
       yaxis: 'y1',
-      hovertemplate: '%{x}<br>IS Equity: $%{y:,.0f}<extra>IS Combined</extra>',
+      hovertemplate: data.production_mode ? '%{x}<br>Equity: $%{y:,.0f}<extra>Combined</extra>' : '%{x}<br>IS Equity: $%{y:,.0f}<extra>IS Combined</extra>',
     });
   }
   

@@ -39,10 +39,11 @@ export async function getAssets(): Promise<AssetsResponse> {
 
 export async function startAnalysis(
   ticker: string,
+  productionMode = false,
   forceRefresh = false
 ): Promise<{ status: string; ticker: string }> {
   return fetchJSON(
-    `${API_BASE}/analyze?ticker=${encodeURIComponent(ticker)}&force_refresh=${forceRefresh}`,
+    `${API_BASE}/analyze?ticker=${encodeURIComponent(ticker)}&production_mode=${productionMode}&force_refresh=${forceRefresh}`,
     { method: 'POST' }
   );
 }

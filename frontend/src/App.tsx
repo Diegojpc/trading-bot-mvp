@@ -37,6 +37,7 @@ export default function App() {
   const [selectedTicker, setSelectedTicker] = useState<string>('QQQ');
   const [status, setStatus] = useState<AnalysisStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [productionMode, setProductionMode] = useState<boolean>(false);
 
   // Results
   const [regimeData, setRegimeData] = useState<RegimeResults | null>(null);
@@ -137,7 +138,7 @@ export default function App() {
     setHeatmapData(null);
 
     try {
-      await startAnalysis(selectedTicker);
+      await startAnalysis(selectedTicker, productionMode);
       setStatus({ status: 'running', progress: 0, message: 'Starting...', current_asset: selectedTicker, error: null });
       startPolling();
     } catch (err: unknown) {
@@ -172,6 +173,17 @@ export default function App() {
               </option>
             ))}
           </select>
+          
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+            <input 
+              type="checkbox" 
+              checked={productionMode}
+              onChange={(e) => setProductionMode(e.target.checked)}
+              disabled={appState === 'running'}
+            />
+            <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>100% Data (Production)</span>
+          </label>
+
           <button
             id="analyze-button"
             className="btn btn--primary"
@@ -184,7 +196,21 @@ export default function App() {
       </header>
 
       {/* Warning banner — always visible */}
-      <Warning />
+      {regimeData?.production_mode ? (
+        <div className="warning-banner fade-in-up" style={{ borderLeftColor: '#3b82f6', background: 'rgba(59, 130, 246, 0.05)', marginBottom: 'var(--space-xl)' }}>
+          <div className="warning-banner__title" style={{ color: '#3b82f6' }}>
+            🚀 Production Mode (100% Data Training)
+          </div>
+          <div className="warning-banner__text">
+            <p>
+              This model was trained on <strong>100% of the historical data</strong>. Out-Of-Sample validation has been intentionally disabled.
+              This maximizes the accuracy of the HMM transition matrices and the SMA parameter sweep for deployment in live trading.
+            </p>
+          </div>
+        </div>
+      ) : (
+        <Warning />
+      )}
 
       {/* Error state */}
       {error && (

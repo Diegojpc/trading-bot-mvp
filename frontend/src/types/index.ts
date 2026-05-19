@@ -44,7 +44,8 @@ export interface RegimeResults {
   bic_scores: Record<string, number>;
   state_volatilities: number[];
   price_data: TimeSeriesData;
-  split_date: string;
+  split_date: string | null;
+  production_mode: boolean;
 }
 
 // ── Sweep Results ─────────────────────────────────────────────────────
@@ -72,6 +73,7 @@ export interface SweepResults {
   state_names: string[];
   colors: string[];
   total_combinations: number;
+  production_mode: boolean;
 }
 
 // ── Equity Curves ─────────────────────────────────────────────────────
@@ -81,7 +83,8 @@ export interface EquityResults {
   regime_bar: RegimeTimeline;
   state_names: string[];
   colors: string[];
-  split_date: string;
+  split_date: string | null;
+  production_mode: boolean;
 }
 
 // ── Heatmap ───────────────────────────────────────────────────────────
