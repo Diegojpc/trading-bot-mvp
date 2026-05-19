@@ -32,6 +32,7 @@ export default function RegimeTimeline({ data }: RegimeTimelineProps) {
         layer: 'below',
       });
       segStart = i;
+    }
   }
 
   // ── IS / OOS Split Line ─────────────────────────────────────────
