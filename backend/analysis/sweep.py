@@ -274,7 +274,12 @@ def run_parameter_sweep(
     equity_curves["combined"] = combined_equity
 
     # ── Build heatmap data ───────────────────────────────────────────
-    heatmap_data = _build_sharpe_heatmap(filtered_df, hmm_result.n_states)
+    heatmap_data = _build_sharpe_heatmap(
+        filtered_df, 
+        hmm_result.n_states,
+        asset_config.default_fast_sma,
+        asset_config.default_slow_sma,
+    )
 
     # Store trades for key combos
     key_trades: dict[str, pd.DataFrame] = {
@@ -335,6 +340,8 @@ def _build_combined_equity(
 def _build_sharpe_heatmap(
     results_df: pd.DataFrame,
     n_states: int,
+    all_fast: list[int],
+    all_slow: list[int],
 ) -> dict:
     """
     Build Sharpe ratio heatmap data for fast_sma × slow_sma
@@ -342,16 +349,16 @@ def _build_sharpe_heatmap(
     """
     heatmap: dict = {"global": {}, "regimes": {}}
 
+    fast_values = sorted(all_fast)
+    slow_values = sorted(all_slow)
+
     # Global heatmap
     grouped = results_df.groupby(["fast_sma", "slow_sma"])["global_sharpe_ratio"].mean()
     heatmap["global"] = {
-        "fast_sma_values": sorted(results_df["fast_sma"].unique().tolist()),
-        "slow_sma_values": sorted(results_df["slow_sma"].unique().tolist()),
+        "fast_sma_values": fast_values,
+        "slow_sma_values": slow_values,
         "sharpe_matrix": [],
     }
-
-    fast_values = sorted(results_df["fast_sma"].unique())
-    slow_values = sorted(results_df["slow_sma"].unique())
 
     matrix = []
     for f in fast_values:
