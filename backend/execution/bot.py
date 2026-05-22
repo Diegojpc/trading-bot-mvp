@@ -8,7 +8,7 @@ from backend.models.features import compute_hmm_features
 from backend.models.hmm import train_hmm
 from backend.config import ASSET_REGISTRY
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("trading_bot")
 
 # Hardcoded absolute risk limit per the user's instructions
 MAX_CAPITAL_USD = 100.0

@@ -7,11 +7,12 @@ import type {
   AssetsResponse,
   EquityResults,
   HeatmapResults,
+  PortfolioSummary,
   RegimeResults,
   SweepResults,
 } from '../types';
 
-const API_BASE = 'http://localhost:8000/api';
+const API_BASE = '/api';
 
 async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, {
@@ -72,6 +73,10 @@ export async function getHeatmapResults(): Promise<HeatmapResults> {
 
 export async function getLiveBalance(marketType = 'spot'): Promise<{ status: string; free_usdt: number; btc_held: number; market_type: string }> {
   return fetchJSON(`${API_BASE}/execution/balance?market_type=${marketType}`);
+}
+
+export async function getPortfolioSummary(marketType = 'spot'): Promise<PortfolioSummary> {
+  return fetchJSON(`${API_BASE}/execution/portfolio?market_type=${marketType}`);
 }
 
 export async function runDailyTick(

@@ -447,6 +447,100 @@ async def get_balance(market_type: str = Query("spot")):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/execution/portfolio")
+async def get_portfolio_summary(market_type: str = Query("spot")):
+    """
+    Full portfolio snapshot: balances, current BTC price, trade history, and P&L.
+    P&L is calculated from the trade history returned by Binance (last 50 trades).
+    """
+    try:
+        from backend.execution.exchange import BinanceExchange
+        exchange = BinanceExchange(market_type=market_type)
+        symbol = "BTC/USDT"
+
+        balances = exchange.get_balances()
+        price = exchange.fetch_ticker_price(symbol)
+        raw_trades = exchange.fetch_my_trades(symbol, limit=50)
+
+        btc_value_usd = balances['btc'] * price
+        total_usd = balances['usdt'] + btc_value_usd
+
+        trades = [
+            {
+                "id": t.get("id"),
+                "datetime": t.get("datetime"),
+                "side": t.get("side"),
+                "amount": round(float(t.get("amount") or 0), 8),
+                "price": round(float(t.get("price") or 0), 2),
+                "cost": round(float(t.get("cost") or 0), 4),
+                "fee_currency": (t.get("fee") or {}).get("currency"),
+                "fee_amount": round(float((t.get("fee") or {}).get("cost") or 0), 8),
+            }
+            for t in raw_trades
+        ]
+
+        # P&L based on all returned trades
+        buys = [t for t in trades if t["side"] == "buy"]
+        sells = [t for t in trades if t["side"] == "sell"]
+        total_buy_cost = sum(t["cost"] for t in buys)
+        total_bought_btc = sum(t["amount"] for t in buys)
+        total_sell_proceeds = sum(t["cost"] for t in sells)
+        total_sold_btc = sum(t["amount"] for t in sells)
+
+        net_btc = total_bought_btc - total_sold_btc
+        net_cost = total_buy_cost - total_sell_proceeds
+
+        avg_entry = (net_cost / net_btc) if net_btc > 1e-9 else None
+        current_val = net_btc * price if net_btc > 1e-9 else 0.0
+        unrealized_pnl = (current_val - net_cost) if net_cost > 0 else None
+        unrealized_pnl_pct = (unrealized_pnl / net_cost * 100) if net_cost > 0 else None
+
+        return {
+            "status": "success",
+            "balances": {
+                "usdt": round(balances['usdt'], 4),
+                "btc": round(balances['btc'], 8),
+                "btc_value_usd": round(btc_value_usd, 2),
+                "total_usd": round(total_usd, 2),
+            },
+            "market": {
+                "btc_price": round(price, 2),
+            },
+            "performance": {
+                "avg_entry_price": round(avg_entry, 2) if avg_entry else None,
+                "total_invested_usd": round(net_cost, 4),
+                "unrealized_pnl_usd": round(unrealized_pnl, 4) if unrealized_pnl is not None else None,
+                "unrealized_pnl_pct": round(unrealized_pnl_pct, 2) if unrealized_pnl_pct is not None else None,
+                "total_buys": len(buys),
+                "total_sells": len(sells),
+            },
+            "recent_trades": list(reversed(trades)),  # newest first
+        }
+    except Exception as e:
+        logger.error(f"Portfolio summary failed: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/execution/diagnostic")
+async def get_balance_diagnostic(market_type: str = Query("spot")):
+    """
+    Dump the raw CCXT balance structure from Binance.
+    Use this to diagnose which wallet types CCXT can see.
+    """
+    try:
+        from backend.execution.exchange import BinanceExchange
+        exchange = BinanceExchange(market_type=market_type)
+        raw = exchange.exchange.fetch_balance()
+        non_zero = {
+            k: v for k, v in raw.items()
+            if isinstance(v, dict) and v.get('total', 0) and v.get('total', 0) != 0
+        }
+        return {"status": "success", "market_type": market_type, "non_zero_balances": non_zero}
+    except Exception as e:
+        logger.error(f"Diagnostic failed: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/execution/tick")
 async def run_tick(
     ticker: str = Query(..., description="Asset ticker (e.g., BTC-USD)"),

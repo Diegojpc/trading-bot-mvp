@@ -17,6 +17,7 @@ import {
 import LoadingSpinner from './components/LoadingSpinner';
 import Warning from './components/Warning';
 import EquityCurves from './sections/EquityCurves';
+import LivePortfolio from './sections/LivePortfolio';
 import ParameterTable from './sections/ParameterTable';
 import RegimeTimeline from './sections/RegimeTimeline';
 import SharpeHeatmap from './sections/SharpeHeatmap';
@@ -51,6 +52,7 @@ export default function App() {
   const [portfolio, setPortfolio] = useState<{ free_usdt: number; btc_held: number } | null>(null);
   const [tickStatus, setTickStatus] = useState<'idle' | 'running' | 'success' | 'error'>('idle');
   const [tickResult, setTickResult] = useState<any>(null);
+  const [portfolioRefresh, setPortfolioRefresh] = useState(0);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -170,8 +172,9 @@ export default function App() {
       const result = await runDailyTick(selectedTicker, 'spot', false);
       setTickResult(result);
       setTickStatus(result.status === 'error' ? 'error' : 'success');
-      // Refresh balance
+      // Refresh balance bar and portfolio section
       getLiveBalance('spot').then(res => setPortfolio({ free_usdt: res.free_usdt, btc_held: res.btc_held })).catch(console.error);
+      setPortfolioRefresh(n => n + 1);
     } catch (err: any) {
       console.error(err);
       setTickResult({ error: err.message });
@@ -234,24 +237,29 @@ export default function App() {
         </div>
       </header>
       
-      {/* Live Portfolio Bar */}
+      {/* Quick status bar */}
       <div style={{ padding: '0 2rem', marginBottom: '1rem', display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
         <div style={{ background: 'var(--surface-color)', padding: '0.75rem 1rem', borderRadius: '0.5rem', border: '1px solid rgba(255,255,255,0.05)', fontSize: '0.9rem', display: 'flex', gap: '1.5rem' }}>
           <span>💵 USDT: <strong style={{ color: '#00d97e' }}>{portfolio ? `$${portfolio.free_usdt.toFixed(2)}` : '...'}</strong></span>
           <span>₿ BTC: <strong style={{ color: '#f7931a' }}>{portfolio ? portfolio.btc_held.toFixed(8) : '...'}</strong></span>
         </div>
         {tickResult && (
-          <div style={{ 
-            background: tickResult.status === 'error' ? 'rgba(239, 68, 68, 0.1)' : tickResult.status === 'executed' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(59, 130, 246, 0.1)', 
-            color: tickResult.status === 'error' ? '#ef4444' : tickResult.status === 'executed' ? '#10b981' : '#3b82f6', 
-            padding: '0.75rem 1rem', borderRadius: '0.5rem', fontSize: '0.9rem', flex: 1 
+          <div style={{
+            background: tickResult.status === 'error' ? 'rgba(239, 68, 68, 0.1)' : tickResult.status === 'executed' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(59, 130, 246, 0.1)',
+            color: tickResult.status === 'error' ? '#ef4444' : tickResult.status === 'executed' ? '#10b981' : '#3b82f6',
+            padding: '0.75rem 1rem', borderRadius: '0.5rem', fontSize: '0.9rem', flex: 1,
           }}>
-            {tickResult.error 
-              ? `❌ ${tickResult.error}` 
-              : `${tickResult.status === 'executed' ? '✅' : tickResult.status === 'error' ? '❌' : tickResult.status === 'holding' ? '📊' : 'ℹ️'} ${tickResult.status.toUpperCase()} | Regime: ${tickResult.current_regime ?? 'N/A'} | Signal: ${tickResult.signal_label ?? (tickResult.signal === 1 ? 'BULLISH' : 'BEARISH')}${tickResult.portfolio ? ` | Portfolio: $${tickResult.portfolio.total_usd}` : ''}${tickResult.reason ? ` | ${tickResult.reason}` : ''}`
+            {tickResult.error
+              ? `❌ ${tickResult.error}`
+              : `${tickResult.status === 'executed' ? '✅' : tickResult.status === 'holding' ? '📊' : 'ℹ️'} ${tickResult.status.toUpperCase()} | Regime: ${tickResult.current_regime ?? 'N/A'} | Signal: ${tickResult.signal_label ?? (tickResult.signal === 1 ? 'BULLISH' : 'BEARISH')}${tickResult.portfolio ? ` | Portfolio: $${tickResult.portfolio.total_usd}` : ''}${tickResult.reason ? ` | ${tickResult.reason}` : ''}`
             }
           </div>
         )}
+      </div>
+
+      {/* Live Portfolio section — always visible */}
+      <div style={{ padding: '0 2rem' }}>
+        <LivePortfolio refreshTrigger={portfolioRefresh} />
       </div>
 
       {/* Warning banner — always visible */}

@@ -87,6 +87,40 @@ export interface EquityResults {
   production_mode: boolean;
 }
 
+// ── Live Portfolio ────────────────────────────────────────────────────
+export interface BotTrade {
+  id: string;
+  datetime: string;
+  side: 'buy' | 'sell';
+  amount: number;
+  price: number;
+  cost: number;
+  fee_currency: string | null;
+  fee_amount: number;
+}
+
+export interface PortfolioSummary {
+  status: string;
+  balances: {
+    usdt: number;
+    btc: number;
+    btc_value_usd: number;
+    total_usd: number;
+  };
+  market: {
+    btc_price: number;
+  };
+  performance: {
+    avg_entry_price: number | null;
+    total_invested_usd: number;
+    unrealized_pnl_usd: number | null;
+    unrealized_pnl_pct: number | null;
+    total_buys: number;
+    total_sells: number;
+  };
+  recent_trades: BotTrade[];
+}
+
 // ── Heatmap ───────────────────────────────────────────────────────────
 export interface HeatmapMatrix {
   fast_sma_values: number[];

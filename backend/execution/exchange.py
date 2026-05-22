@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 # Load env vars from .env file
 load_dotenv()
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("trading_bot")
 
 class BinanceExchange:
     """
@@ -58,7 +58,9 @@ class BinanceExchange:
         logger.info(f"Fetching USDT balance for {self.market_type} account...")
         try:
             balance = self.exchange.fetch_balance()
-            free_usdt = balance.get('USDT', {}).get('free', 0.0)
+            non_zero = {k: v for k, v in balance.items() if isinstance(v, dict) and v.get('total', 0) and v.get('total', 0) != 0}
+            logger.info(f"Non-zero balances found by CCXT: {non_zero}")
+            free_usdt = float(balance.get('USDT', {}).get('free', 0.0) or 0.0)
             logger.info(f"Fetched USDT balance: ${free_usdt:.2f}")
             return free_usdt
         except Exception as e:
@@ -73,10 +75,12 @@ class BinanceExchange:
         logger.info(f"Fetching position for {symbol}...")
         try:
             if self.market_type == "spot":
-                # For spot, position is just the free balance of the base currency
+                # For spot, position is just the total balance of the base currency
                 base_currency = symbol.split('/')[0]
                 balance = self.exchange.fetch_balance()
-                pos = balance.get(base_currency, {}).get('total', 0.0)
+                raw = balance.get(base_currency, {})
+                logger.info(f"Raw {base_currency} balance entry: {raw}")
+                pos = float(raw.get('total', 0.0) or 0.0)
                 logger.info(f"Spot position for {symbol}: {pos} {base_currency}")
                 return pos
             else:
@@ -94,6 +98,44 @@ class BinanceExchange:
                 return float(pos)
         except Exception as e:
             logger.error(f"Failed to fetch position for {symbol}: {str(e)}", exc_info=True)
+            raise
+
+    def get_balances(self) -> Dict[str, float]:
+        """Fetch USDT and BTC balances in a single API call."""
+        logger.info(f"Fetching full balances for {self.market_type} account...")
+        try:
+            balance = self.exchange.fetch_balance()
+            non_zero = {k: v for k, v in balance.items() if isinstance(v, dict) and v.get('total', 0) and v.get('total', 0) != 0}
+            logger.info(f"Non-zero balances: {non_zero}")
+            return {
+                'usdt': float(balance.get('USDT', {}).get('free', 0.0) or 0.0),
+                'btc': float(balance.get('BTC', {}).get('total', 0.0) or 0.0),
+            }
+        except Exception as e:
+            logger.error(f"Failed to fetch balances: {str(e)}", exc_info=True)
+            raise
+
+    def fetch_ticker_price(self, symbol: str) -> float:
+        """Fetch the last traded price for a symbol."""
+        logger.info(f"Fetching ticker price for {symbol}...")
+        try:
+            ticker = self.exchange.fetch_ticker(symbol)
+            price = float(ticker['last'])
+            logger.info(f"Last price for {symbol}: ${price:.2f}")
+            return price
+        except Exception as e:
+            logger.error(f"Failed to fetch ticker for {symbol}: {str(e)}", exc_info=True)
+            raise
+
+    def fetch_my_trades(self, symbol: str, limit: int = 50) -> list:
+        """Fetch own trade history for a symbol (most recent last)."""
+        logger.info(f"Fetching own trade history for {symbol} (limit={limit})...")
+        try:
+            trades = self.exchange.fetch_my_trades(symbol, limit=limit)
+            logger.info(f"Fetched {len(trades)} trades for {symbol}")
+            return trades
+        except Exception as e:
+            logger.error(f"Failed to fetch trade history for {symbol}: {str(e)}", exc_info=True)
             raise
 
     def execute_market_order(self, symbol: str, side: str, amount: float) -> Dict[str, Any]:
